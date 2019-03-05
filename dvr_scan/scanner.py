@@ -38,6 +38,7 @@ import dvr_scan.platform
 # Third-Party Library Imports
 import cv2
 import numpy as np
+import datetime
 
 
 class ScanContext(object):
@@ -55,6 +56,8 @@ class ScanContext(object):
         self.event_list = []
 
         self.suppress_output = args.quiet_mode
+        self.live_stream = args.live_stream
+        self.live_mode = len(self.live_stream) > 0
         self.frames_read = -1
         self.frames_processed = -1
         self.frames_total = -1
@@ -63,10 +66,14 @@ class ScanContext(object):
 
         self.video_resolution = None
         self.video_fps = None
-        self.video_paths = [input_file.name for input_file in args.input]
-        # We close the open file handles, as only the paths are required.
-        for input_file in args.input:
-            input_file.close()
+        if not self.live_mode:
+            self.video_paths = [input_file.name for input_file in args.input]
+            # We close the open file handles, as only the paths are required.
+            for input_file in args.input:
+                input_file.close()
+        else:
+            self.video_paths = [self.live_stream]
+            
         if not len(args.fourcc_str) == 4:
             print("[DVR-Scan] Error: Specified codec (-c/--codec) must be exactly 4 characters.")
             return
@@ -84,6 +91,7 @@ class ScanContext(object):
             self.comp_file = args.output.name
             args.output.close()
         # Check the input video(s) and obtain the framerate/resolution.
+
         if self._load_input_videos():
             # Motion detection and output related arguments
             self.threshold = args.threshold
@@ -128,7 +136,10 @@ class ScanContext(object):
         for video_path in self.video_paths:
             cap = cv2.VideoCapture()
             cap.open(video_path)
-            video_name = os.path.basename(video_path)
+            if not self.live_mode:
+                video_name = os.path.basename(video_path)
+            else:
+                video_name = "live"
             if not cap.isOpened():
                 if not self.suppress_output:
                     print("[DVR-Scan] Error: Couldn't load video %s." % video_name)
@@ -195,9 +206,12 @@ class ScanContext(object):
         if self.initialized is not True:
             print("[DVR-Scan] Error: Scan context uninitialized, no analysis performed.")
             return
-        print("[DVR-Scan] Scanning %s for motion events..." % (
-            "%d input videos" % len(self.video_paths) if len(self.video_paths) > 1
-            else "input video"))
+        if len(self.live_stream) == 0:
+            print("[DVR-Scan] Scanning %s for motion events..." % (
+                "%d input videos" % len(self.video_paths) if len(self.video_paths) > 1
+                else "input video"))
+        else:
+            print("[DVR-Scan] Scanning %s for motion events..." % self.live_stream)
 
         bg_subtractor = cv2.createBackgroundSubtractorMOG2(detectShadows=False)
         buffered_frames = []
@@ -211,6 +225,8 @@ class ScanContext(object):
         if self.comp_file:
             video_writer = cv2.VideoWriter(self.comp_file, self.fourcc,
                                            self.video_fps, self.video_resolution)
+        elif len(self.live_stream) > 0:
+            output_prefix = "live_stream_"
         elif len(self.video_paths[0]) > 0:
             output_prefix = os.path.basename(self.video_paths[0])
             dot_index = output_prefix.rfind('.')
@@ -297,6 +313,8 @@ class ScanContext(object):
                 if len(event_window) >= self.min_event_len.frame_num and all(
                         score >= self.threshold for score in event_window):
                     in_motion_event = True
+                    if self.live_mode:
+                        print("Motion detected at: " + datetime.datetime.now().strftime("%X"))
                     event_window = []
                     num_frames_post_event = 0
                     event_start = FrameTimecode(
@@ -342,25 +360,26 @@ class ScanContext(object):
             print("[DVR-Scan] No motion events detected in input.")
             return
 
-        print("[DVR-Scan] Detected %d motion events in input." % len(self.event_list))
-        print("[DVR-Scan] Scan-only mode specified, list of motion events:")
-        print("-------------------------------------------------------------")
-        print("|   Event #    |  Start Time  |   Duration   |   End Time   |")
-        print("-------------------------------------------------------------")
-        for event_num, (event_start, event_end, event_duration) in enumerate(self.event_list):
-            print("|  Event %4d  |  %s  |  %s  |  %s  |" % (
-                event_num + 1, event_start.get_timecode(precision=1),
-                event_duration.get_timecode(precision=1),
-                event_end.get_timecode(precision=1)))
-        print("-------------------------------------------------------------")
+        if not self.live_mode:
+            print("[DVR-Scan] Detected %d motion events in input." % len(self.event_list))
+            print("[DVR-Scan] Scan-only mode specified, list of motion events:")
+            print("-------------------------------------------------------------")
+            print("|   Event #    |  Start Time  |   Duration   |   End Time   |")
+            print("-------------------------------------------------------------")
+            for event_num, (event_start, event_end, event_duration) in enumerate(self.event_list):
+                print("|  Event %4d  |  %s  |  %s  |  %s  |" % (
+                    event_num + 1, event_start.get_timecode(precision=1),
+                    event_duration.get_timecode(precision=1),
+                    event_end.get_timecode(precision=1)))
+            print("-------------------------------------------------------------")
 
-        if self.scan_only_mode:
-            print("[DVR-Scan] Comma-separated timecode values:")
-            timecode_list = []
-            for event_start, event_end, event_duration in self.event_list:
-                timecode_list.append(event_start.get_timecode())
-                timecode_list.append(event_end.get_timecode())
-            print(','.join(timecode_list))
-        else:
-            print("[DVR-Scan] Motion events written to disk.")
+            if self.scan_only_mode:
+                print("[DVR-Scan] Comma-separated timecode values:")
+                timecode_list = []
+                for event_start, event_end, event_duration in self.event_list:
+                    timecode_list.append(event_start.get_timecode())
+                    timecode_list.append(event_end.get_timecode())
+                print(','.join(timecode_list))
+            else:
+                print("[DVR-Scan] Motion events written to disk.")
 

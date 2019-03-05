@@ -269,16 +269,17 @@ def get_cli_parser():
     """
     parser = argparse.ArgumentParser(
         formatter_class = argparse.ArgumentDefaultsHelpFormatter)
+    group_input = parser.add_mutually_exclusive_group(required=True)
     parser._optionals.title = 'arguments'
 
     parser.add_argument(
         '-v', '--version',
         action = AboutAction, version = dvr_scan.ABOUT_STRING)
 
-    parser.add_argument(
+    group_input.add_argument(
         '-i', '--input', metavar = 'VIDEO_FILE',
-        required = True, type = argparse.FileType('r'), action='append',
-        help = ('[REQUIRED] Path to input video. May be specified multiple'
+        type = argparse.FileType('r'), action='append',
+        help = ('[REQUIRED if no -lv option] Path to input video. May be specified multiple'
                 ' times to join several videos with the same resolution'
                 ' and framerate. Any output filenames will be generated'
                 ' using the first filename only.'))
@@ -412,6 +413,11 @@ def get_cli_parser():
     #    help = ('If set, the first and last frames in each detected motion'
     #            ' event will be saved to disk. Images will be saved in the'
     #            ' same folder as the input video, unless set otherwise.'))
+    group_input.add_argument(
+        '-lv', '--live', dest = 'live_stream', default = "",
+        help = ('Read live stream instead file. Print motion event start time in real time.'
+            ' Don\'t print final list of motion events. Useful with -q and -so for piping'
+            ' output to external script where some actions occurs when motion detected.'))
 
     return parser
 
