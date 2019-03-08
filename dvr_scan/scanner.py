@@ -30,6 +30,7 @@
 from __future__ import print_function
 import os
 import time
+import sys
 
 # DVR-Scan Library Imports
 from dvr_scan.timecode import FrameTimecode
@@ -315,6 +316,7 @@ class ScanContext(object):
                     in_motion_event = True
                     if self.live_mode:
                         print("Motion detected at: " + datetime.datetime.now().strftime("%X"))
+                        sys.stdout.flush()
                     event_window = []
                     num_frames_post_event = 0
                     event_start = FrameTimecode(
